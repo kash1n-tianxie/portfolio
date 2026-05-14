@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Spatial Particle UI - Contactless Operation</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+JP:wght@300;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; }
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Noto Sans JP', sans-serif;
+            color: #fff;
+        }
+
+        /* 1. Cinematic Background Effects */
+        #filmic-noise {
+            position: fixed; inset: 0; z-index: 1; pointer-events: none;
+            background-image: url('data:image/svg+xml,%3Csvg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"%3E%3Cfilter id="noiseFilter"%3E%3CfeTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/%3E%3C/filter%3E%3Crect width="100%25" height="100%25" filter="url(%23noiseFilter)" opacity="0.08"/%3E%3C/svg%3E');
+            mix-blend-mode: overlay; opacity: 0.7;
+        }
+        #vignette {
+            position: fixed; inset: 0; z-index: 2; pointer-events: none;
+            background: radial-gradient(circle at center, transparent 30%, rgba(0,0,0,0.85) 100%);
+        }
+
+        /* 2. Cinematic Preloader */
+        #preloader {
+            position: fixed; inset: 0; z-index: 9999;
+            background: #030508;
+            display: flex; justify-content: center; align-items: center;
+            transition: opacity 1.2s cubic-bezier(0.86, 0, 0.07, 1);
+        }
+        #preloader.loaded { opacity: 0; pointer-events: none; }
+        .preloader-content { text-align: center; width: 300px; }
+        .preloader-brand {
+            font-family: 'Share Tech Mono', monospace; font-size: 14px;
+            color: #00f3ff; letter-spacing: 0.4em; margin-bottom: 20px;
+            text-shadow: 0 0 10px rgba(0,243,255,0.5);
+        }
+        .preloader-bar-container {
+            width: 100%; height: 2px; background: rgba(0,243,255,0.1);
+            margin-bottom: 10px; position: relative; overflow: hidden;
+        }
+        .preloader-bar-fill {
+            position: absolute; top: 0; left: 0; height: 100%; width: 0%;
+            background: #00f3ff; box-shadow: 0 0 10px #00f3ff;
+            transition: width 0.2s ease;
+        }
+        .preloader-status {
+            font-family: 'Share Tech Mono', monospace; font-size: 10px;
+            color: rgba(255,255,255,0.5); letter-spacing: 0.1em;
+        }
+
+        /* 3. Glassmorphism UI Panels */
+        .glass-panel {
+            background: rgba(10, 15, 25, 0.6);
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 243, 255, 0.15);
+            border-top: 1px solid rgba(0, 243, 255, 0.4);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            border-radius: 8px; z-index: 10;
+        }
+
+        /* Model Selector */
+        #model-selector {
+            position: absolute; top: 30px; left: 30px; padding: 20px;
+            display: flex; flex-direction: column; gap: 12px; width: 220px;
+        }
+        .panel-title {
+            font-family: 'Share Tech Mono', monospace; font-size: 11px;
+            color: rgba(255,255,255,0.8); letter-spacing: 0.2em;
+            margin-bottom: 8px; display: flex; align-items: center; gap: 8px;
+        }
+        .dot {
+            width: 6px; height: 6px; background: #00f3ff; border-radius: 50%;
+            box-shadow: 0 0 8px #00f3ff; animation: pulse 1.5s infinite;
+        }
+        #model-selector button {
+            background: rgba(0, 243, 255, 0.05);
+            border: 1px solid rgba(0, 243, 255, 0.2);
+            color: rgba(255, 255, 255, 0.7);
+            padding: 12px 16px; border-radius: 4px; cursor: pointer;
+            font-family: 'Share Tech Mono', monospace; font-size: 12px;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            text-align: left; letter-spacing: 0.05em;
+            position: relative; overflow: hidden;
+        }
+        #model-selector button:hover {
+            background: rgba(0, 243, 255, 0.15); color: #fff;
+            border-color: rgba(0, 243, 255, 0.5); transform: translateX(5px);
+        }
+        #model-selector button.active {
+            background: rgba(0, 243, 255, 0.25); color: #fff;
+            border-left: 4px solid #00f3ff; border-color: rgba(0, 243, 255, 0.8);
+            box-shadow: inset 0 0 15px rgba(0, 243, 255, 0.2);
+        }
+
+        /* Sensor View (Camera Replacement) */
+        #sensor-container {
+            position: absolute; top: 30px; right: 30px; padding: 15px; width: 260px;
+        }
+        .sensor-title {
+            font-family: 'Share Tech Mono', monospace; font-size: 10px;
+            color: #00ffcc; letter-spacing: 0.2em; margin-bottom: 10px;
+            display: flex; justify-content: space-between;
+        }
+        .sensor-title span { color: rgba(255,255,255,0.5); }
+        .sensor-view {
+            width: 100%; height: 170px; background: #05080a;
+            border: 1px solid rgba(0,243,255,0.2); border-radius: 4px;
+            position: relative; overflow: hidden;
+        }
+        #skeleton-canvas {
+            width: 100%; height: 100%; display: block;
+        }
+
+        /* Fake Scanline on sensor view */
+        .scanline {
+            position: absolute; top: 0; left: 0; width: 100%; height: 2px;
+            background: rgba(0, 243, 255, 0.5); box-shadow: 0 0 10px #00f3ff;
+            animation: scan 2s linear infinite; opacity: 0.6; pointer-events: none;
+        }
+        #gesture-status {
+            font-family: 'Share Tech Mono', monospace; font-size: 11px;
+            color: #00f3ff; text-align: center; margin-top: 12px;
+            letter-spacing: 0.1em;
+        }
+        
+        @keyframes scan {
+            0% { top: -5%; }
+            100% { top: 105%; }
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+        }
+    </style>
+    <!-- Three.js & Post-Processing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <!-- MediaPipe Hands -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    <div id="filmic-noise"></div>
+    <div id="vignette"></div>
+
+    <div id="preloader">
+        <div class="preloader-content">
+            <div class="preloader-brand">SPATIAL PARTICLE UI SYSTEM</div>
+            <div class="preloader-bar-container">
+                <div id="preloader-bar-fill"></div>
+            </div>
+            <div class="preloader-status" id="preloader-status">INITIALIZING SENSORS...</div>
+        </div>
+    </div>
+
+    <div id="model-selector" class="glass-panel">
+        <div class="panel-title"><div class="dot"></div> MODEL SELECT</div>
+        <button onclick="loadModel('dog.glb')" class="active">1</button>
+        <button onclick="loadModel('model1.glb')">2</button>
+        <button onclick="loadModel('model2.glb')">3</button>
+        <button onclick="loadModel('model3.glb')">4</button>
+    </div>
+
+    <div id="sensor-container" class="glass-panel">
+        <div class="sensor-title">🟢 CONTACTLESS SENSOR <span>[ACTIVE]</span></div>
+        <div class="sensor-view">
+            <!-- 真实的摄像头画面被隐藏，用于隐私保护和提供极客感 -->
+            <video id="video" autoplay playsinline style="display:none;"></video>
+            <!-- 骨骼图将绘制在此画布上 -->
+            <canvas id="skeleton-canvas" width="320" height="240"></canvas>
+            <div class="scanline"></div>
+        </div>
+        <div id="gesture-status">AWAITING HAND...</div>
+    </div>
+
+
+
+    <script>
+        // --- 0. Preloader Fake Progress ---
+        const preloaderBar = document.getElementById('preloader-bar-fill');
+        const preloaderText = document.getElementById('preloader-status');
+        let loadProgress = 0;
+        const fakeProgress = setInterval(() => {
+            loadProgress += Math.random() * 5;
+            if(loadProgress > 90) loadProgress = 90;
+            preloaderBar.style.width = loadProgress + '%';
+        }, 100);
+
+        function endPreloader() {
+            clearInterval(fakeProgress);
+            preloaderBar.style.width = '100%';
+            preloaderText.innerText = 'SYSTEM READY';
+            setTimeout(() => {
+                document.getElementById('preloader').classList.add('loaded');
+            }, 600);
+        }
+
+        // --- 1. Three.js Setup & Composer (Bloom) ---
+        const scene = new THREE.Scene();
+        // 稍微压低视角，让画面看起来更加宏大
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 1.5, 9);
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        // Tone mapping 让发光(Bloom)的高亮部分更加平滑自然
+        renderer.toneMapping = THREE.ReinhardToneMapping;
+        renderer.toneMappingExposure = 1.2;
+        document.body.appendChild(renderer.domElement);
+        
+        // Post-processing
+        const renderScene = new THREE.RenderPass(scene, camera);
+        const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+        bloomPass.threshold = 0.05; // 较低的阈值让更多带颜色的地方也能发光
+        bloomPass.strength = 1.8;  // 极强的光晕质感
+        bloomPass.radius = 0.8;
+        
+        const composer = new THREE.EffectComposer(renderer);
+        composer.addPass(renderScene);
+        composer.addPass(bloomPass);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.autoRotate = false;
+        
+        // --- 2. ShaderMaterial ---
+        const particleShader = {
+            uniforms: {
+                uTime: { value: 0 },
+                uProgress: { value: 0 }
+            },
+            vertexShader: `
+                uniform float uTime;
+                uniform float uProgress;
+                
+                attribute vec3 randomDir; 
+                attribute float randomOffset; 
+                attribute vec3 aColor;
+                
+                varying float vAlpha;
+                varying vec3 vColor;
+                
+                void main() {
+                    vec3 pos = position;
+                    
+                    // Cinematic floating noise
+                    float noiseX = sin(uTime * 1.5 + randomOffset * 10.0) * 0.06;
+                    float noiseY = cos(uTime * 2.0 + randomOffset * 12.0) * 0.06;
+                    float noiseZ = sin(uTime * 1.2 + randomOffset * 8.0) * 0.06;
+                    pos += vec3(noiseX, noiseY, noiseZ);
+                    
+                    // Smooth expansion
+                    float p = smoothstep(0.0, 1.0, uProgress); 
+                    // 加上 pow(p, 1.5) 使得散开的物理感更加具有爆发力和戏剧性
+                    float scatterDist = (randomOffset * 12.0 + 3.0) * pow(p, 1.5); 
+                    pos += randomDir * scatterDist; 
+                    
+                    vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+                    gl_Position = projectionMatrix * mvPosition;
+                    
+                    gl_PointSize = (14.0 + randomOffset * 10.0) / -mvPosition.z;
+                    
+                    // Fade heavily on expand
+                    vAlpha = mix(1.0, 0.08, p);
+                    
+                    // Boost color lightly to ensure bloom kicks in
+                    vColor = aColor + vec3(0.05);
+                }
+            `,
+            fragmentShader: `
+                varying float vAlpha;
+                varying vec3 vColor;
+                
+                void main() {
+                    vec2 coord = gl_PointCoord - vec2(0.5);
+                    float dist = length(coord);
+                    if (dist > 0.5) discard; 
+                    
+                    // 高斯柔和边缘
+                    float alpha = smoothstep(0.5, 0.0, dist) * vAlpha;
+                    gl_FragColor = vec4(vColor, alpha);
+                }
+            `,
+            transparent: true,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        };
+        
+        const material = new THREE.ShaderMaterial({
+            uniforms: particleShader.uniforms,
+            vertexShader: particleShader.vertexShader,
+            fragmentShader: particleShader.fragmentShader,
+            transparent: true,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        });
+        
+        let particleSystem;
+        let currentRequestedUrl = '';
+        const loader = new THREE.GLTFLoader();
+
+        const models = ['dog.glb', 'model1.glb', 'model2.glb', 'model3.glb'];
+        let currentModelIndex = 0;
+
+        function cycleNextModel() {
+            currentModelIndex = (currentModelIndex + 1) % models.length;
+            loadModel(models[currentModelIndex]);
+        }
+
+        // --- 3. Model Loading with UV Textures ---
+        let isFirstLoad = true;
+        function loadModel(url) {
+            currentRequestedUrl = url;
+            currentModelIndex = models.indexOf(url);
+            if (currentModelIndex === -1) currentModelIndex = 0;
+            
+            document.querySelectorAll('#model-selector button').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.getAttribute('onclick').includes(url)) {
+                    btn.classList.add('active');
+                }
+            });
+
+            loader.load('./' + url, (gltf) => {
+                if (currentRequestedUrl !== url) return;
+
+                const vertices = [];
+                const colors = [];
+                gltf.scene.updateMatrixWorld(true);
+                
+                const textureCache = {};
+
+                gltf.scene.traverse((child) => {
+                    if (child.isMesh) {
+                        const posAttribute = child.geometry.attributes.position;
+                        const uvAttribute = child.geometry.attributes.uv;
+                        const colorAttribute = child.geometry.attributes.color;
+                        const matrix = child.matrixWorld;
+                        
+                        let matColor = new THREE.Color(1.0, 1.0, 1.0);
+                        let imgData = null;
+                        let imgWidth = 0, imgHeight = 0;
+                        let flipY = false;
+                        
+                        if (child.material) {
+                            if (child.material.color) matColor = child.material.color;
+                            
+                            if (child.material.map && child.material.map.image) {
+                                const map = child.material.map;
+                                flipY = map.flipY;
+                                if (textureCache[map.uuid]) {
+                                    imgData = textureCache[map.uuid].data;
+                                    imgWidth = textureCache[map.uuid].width;
+                                    imgHeight = textureCache[map.uuid].height;
+                                } else {
+                                    try {
+                                        const img = map.image;
+                                        const canvas = document.createElement('canvas');
+                                        canvas.width = img.width;
+                                        canvas.height = img.height;
+                                        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                                        ctx.drawImage(img, 0, 0);
+                                        imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+                                        imgWidth = canvas.width;
+                                        imgHeight = canvas.height;
+                                        textureCache[map.uuid] = { data: imgData, width: imgWidth, height: imgHeight };
+                                    } catch (e) {}
+                                }
+                            }
+                        }
+
+                        for (let i = 0; i < posAttribute.count; i++) {
+                            const vertex = new THREE.Vector3();
+                            vertex.fromBufferAttribute(posAttribute, i);
+                            vertex.applyMatrix4(matrix);
+                            vertices.push(vertex.x, vertex.y, vertex.z);
+                            
+                            if (colorAttribute) {
+                                colors.push(colorAttribute.getX(i), colorAttribute.getY(i), colorAttribute.getZ(i));
+                            } else if (imgData && uvAttribute) {
+                                let u = uvAttribute.getX(i);
+                                let v = uvAttribute.getY(i);
+                                
+                                u = u - Math.floor(u);
+                                v = v - Math.floor(v);
+                                
+                                let ty = Math.floor((1.0 - v) * imgHeight);
+                                if (!flipY) ty = Math.floor(v * imgHeight);
+                                
+                                let tx = Math.floor(u * imgWidth);
+                                tx = Math.max(0, Math.min(imgWidth - 1, tx));
+                                ty = Math.max(0, Math.min(imgHeight - 1, ty));
+                                
+                                const idx = (ty * imgWidth + tx) * 4;
+                                const r = Math.pow(imgData[idx] / 255.0, 2.2);
+                                const g = Math.pow(imgData[idx+1] / 255.0, 2.2);
+                                const b = Math.pow(imgData[idx+2] / 255.0, 2.2);
+                                colors.push(r, g, b);
+                            } else {
+                                colors.push(matColor.r, matColor.g, matColor.b);
+                            }
+                        }
+                    }
+                });
+
+                if (vertices.length === 0) return;
+
+                const geometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(vertices);
+                const colorArray = new Float32Array(colors);
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                geometry.setAttribute('aColor', new THREE.BufferAttribute(colorArray, 3));
+                
+                geometry.computeBoundingBox();
+                const box = geometry.boundingBox;
+                const center = new THREE.Vector3();
+                box.getCenter(center);
+                geometry.translate(-center.x, -center.y, -center.z);
+                
+                const size = box.getSize(new THREE.Vector3()).length();
+                // 稍微放大了比例，让它更有压迫感和视觉冲击力
+                const scale = size > 0 ? (5.5 / size) : 1; 
+                geometry.scale(scale, scale, scale);
+                
+                const randomDirs = new Float32Array(vertices.length);
+                const randomOffsets = new Float32Array(vertices.length / 3);
+                const scaledPositions = geometry.attributes.position.array;
+                
+                for (let i = 0; i < vertices.length / 3; i++) {
+                    const px = scaledPositions[i*3];
+                    const py = scaledPositions[i*3+1];
+                    const pz = scaledPositions[i*3+2];
+                    
+                    const dir = new THREE.Vector3(px, py, pz).normalize();
+                    // 加入散开时的乱流感
+                    dir.x += (Math.random() - 0.5) * 0.8;
+                    dir.y += (Math.random() - 0.5) * 0.8;
+                    dir.z += (Math.random() - 0.5) * 0.8;
+                    dir.normalize();
+                    
+                    randomDirs[i*3] = dir.x;
+                    randomDirs[i*3+1] = dir.y;
+                    randomDirs[i*3+2] = dir.z;
+                    randomOffsets[i] = Math.random();
+                }
+                
+                geometry.setAttribute('randomDir', new THREE.BufferAttribute(randomDirs, 3));
+                geometry.setAttribute('randomOffset', new THREE.BufferAttribute(randomOffsets, 1));
+                
+                if (particleSystem) {
+                    particleSystem.geometry.dispose();
+                    particleSystem.geometry = geometry;
+                } else {
+                    particleSystem = new THREE.Points(geometry, material);
+                    scene.add(particleSystem);
+                }
+                
+                if (isFirstLoad) {
+                    isFirstLoad = false;
+                    endPreloader();
+                }
+            }, undefined, (error) => {});
+        }
+
+        loadModel('dog.glb');
+        
+        // --- 4. Camera Drift Dynamics ---
+        let mouseX = 0, mouseY = 0;
+        document.addEventListener('mousemove', (e) => {
+            mouseX = (e.clientX - window.innerWidth / 2) * 0.002;
+            mouseY = (e.clientY - window.innerHeight / 2) * 0.002;
+        });
+
+        // --- 5. MediaPipe Hands (Sensor View) ---
+        const videoElement = document.getElementById('video');
+        const skeletonCanvas = document.getElementById('skeleton-canvas');
+        const canvasCtx = skeletonCanvas.getContext('2d');
+        const statusText = document.getElementById('gesture-status');
+        let targetProgress = 0.0;
+        let targetVelocityX = 0.0;
+        let targetVelocityY = 0.0;
+        let currentVelocityX = 0.0;
+        let currentVelocityY = 0.0;
+        let rightHandFistState = false;
+
+        // --- 1-Euro Filter ---
+        // 原理: 根据信号速度自适应调整截止频率
+        //   静止时: 低截止频率 → 强平滑 → 消除抖动
+        //   运动时: 高截止频率 → 弱平滑 → 保持低延迟
+        // 参数:
+        //   mincutoff: 最低截止频率 (Hz)，越小静止时越平滑
+        //   beta:      速度系数，越大对快速运动响应越灵敏
+        //   dcutoff:   导数滤波器截止频率，通常固定为 1 Hz
+        class OneEuroFilter {
+            constructor(freq = 30, mincutoff = 1.0, beta = 0.0, dcutoff = 1.0) {
+                this.freq = freq;           // 采样率 (Hz)
+                this.mincutoff = mincutoff; // 最低截止频率
+                this.beta = beta;           // 速度自适应系数
+                this.dcutoff = dcutoff;     // 导数滤波截止频率
+                this._x = null;             // 上一帧滤波值
+                this._dx = 0.0;             // 平滑后的导数
+                this._lastTime = null;
+            }
+
+            // 低通滤波系数 α: 越接近1滤波越弱(更跟手), 越接近0滤波越强(更平滑)
+            _alpha(cutoff) {
+                const te = 1.0 / this.freq;
+                const tau = 1.0 / (2.0 * Math.PI * cutoff);
+                return 1.0 / (1.0 + tau / te);
+            }
+
+            filter(x, timestamp = null) {
+                // 动态估算采样率（有时间戳时）
+                if (timestamp !== null && this._lastTime !== null) {
+                    const dt = timestamp - this._lastTime;
+                    if (dt > 0) this.freq = 1.0 / dt;
+                }
+                if (timestamp !== null) this._lastTime = timestamp;
+
+                // 初始化：第一帧直接返回原始值
+                if (this._x === null) { this._x = x; return x; }
+
+                // Step 1: 用固定截止频率 dcutoff 平滑导数（速度）
+                const dx_raw = (x - this._x) * this.freq;
+                const alpha_d = this._alpha(this.dcutoff);
+                this._dx = alpha_d * dx_raw + (1.0 - alpha_d) * this._dx;
+
+                // Step 2: 根据速度自适应计算截止频率
+                //   速度越大 → cutoff 越高 → α 越大 → 越跟手
+                const cutoff = this.mincutoff + this.beta * Math.abs(this._dx);
+
+                // Step 3: 对信号本身做低通滤波
+                const alpha_x = this._alpha(cutoff);
+                this._x = alpha_x * x + (1.0 - alpha_x) * this._x;
+
+                return this._x;
+            }
+
+            reset() {
+                this._x = null;
+                this._dx = 0.0;
+                this._lastTime = null;
+            }
+        }
+
+        // 实例化三个滤波器:
+        //   左手张开度: mincutoff=1.0, beta=0.4  → 静止极平滑，慢速动作也跟手
+        //   右手 tiltX: mincutoff=1.5, beta=1.5  → 旋转控制，快速响应同时消抖
+        //   右手 tiltY: mincutoff=1.5, beta=2.0  → Z轴倾斜噪声大，beta更大以跟手
+        const filterOpenness   = new OneEuroFilter(30, 1.0, 0.4, 1.0);
+        const filterTiltX      = new OneEuroFilter(30, 1.5, 1.5, 1.0);
+        const filterTiltY      = new OneEuroFilter(30, 1.5, 2.0, 1.0);
+        // 右手 openness 也过滤，防止拳头判断误触发
+        const filterRightOpen  = new OneEuroFilter(30, 2.0, 0.5, 1.0);
+        
+        const hands = new window.Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+        
+        hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+        
+        function getDistance(p1, p2) {
+            return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2) + Math.pow(p1.z - p2.z, 2));
+        }
+
+        // 绘制高科技底图网格
+        function drawSensorGrid() {
+            canvasCtx.fillStyle = '#05080a';
+            canvasCtx.fillRect(0, 0, skeletonCanvas.width, skeletonCanvas.height);
+            canvasCtx.strokeStyle = 'rgba(0, 243, 255, 0.08)';
+            canvasCtx.lineWidth = 1;
+            for(let i=0; i<skeletonCanvas.width; i+=20) { canvasCtx.beginPath(); canvasCtx.moveTo(i,0); canvasCtx.lineTo(i,skeletonCanvas.height); canvasCtx.stroke(); }
+            for(let i=0; i<skeletonCanvas.height; i+=20) { canvasCtx.beginPath(); canvasCtx.moveTo(0,i); canvasCtx.lineTo(skeletonCanvas.width,i); canvasCtx.stroke(); }
+        }
+        
+        hands.onResults((results) => {
+            drawSensorGrid();
+            
+            let leftHandFound = false;
+            let rightHandFound = false;
+            let statusStr = '';
+            
+            if (results.multiHandLandmarks && results.multiHandedness) {
+                for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+                    const landmarks = results.multiHandLandmarks[i];
+                    const label = results.multiHandedness[i].label; // 'Left' or 'Right'
+                    
+                    const wrist = landmarks[0];
+                    const middleMcp = landmarks[9];
+                    const palmSize = getDistance(wrist, middleMcp);
+                    
+                    const indexTip = landmarks[8];
+                    const middleTip = landmarks[12];
+                    const ringTip = landmarks[16];
+                    const pinkyTip = landmarks[20];
+                    
+                    const avgDist = (getDistance(wrist, indexTip) + getDistance(wrist, middleTip) + getDistance(wrist, ringTip) + getDistance(wrist, pinkyTip)) / 4.0;
+                    
+                    const ratio = avgDist / palmSize;
+                    let openness = (ratio - 1.2) / 0.8; 
+                    openness = Math.max(0.0, Math.min(1.0, openness));
+                    
+                    const w = skeletonCanvas.width;
+                    const h = skeletonCanvas.height;
+                    const connections = [
+                        [0,1],[1,2],[2,3],[3,4],
+                        [0,5],[5,6],[6,7],[7,8],
+                        [5,9],[9,10],[10,11],[11,12],
+                        [9,13],[13,14],[14,15],[15,16],
+                        [13,17],[17,18],[18,19],[19,20],
+                        [0,17], [5,17]
+                    ];
+                    
+                    if (label === 'Left') {
+                        leftHandFound = true;
+                        // 1-Euro Filter: 平滑张开度，消除手部静止时的高频抖动
+                        const smoothOpenness = filterOpenness.filter(openness, performance.now() / 1000);
+                        targetProgress = smoothOpenness;
+                        statusStr += (smoothOpenness > 0.6 ? '[L] EXPLODE VIEW 👐   ' : '[L] RECONSTRUCT ✊   ');
+                        
+                        canvasCtx.strokeStyle = 'rgba(0, 243, 255, 0.8)';
+                        canvasCtx.shadowColor = '#00f3ff';
+                    } else {
+                        rightHandFound = true;
+                        // 1-Euro Filter: 平滑右手张开度，防止拳头误触发
+                        const smoothRightOpen = filterRightOpen.filter(openness, performance.now() / 1000);
+                        
+                        if (smoothRightOpen < 0.3) {
+                            statusStr += '[R] NEXT RECORD ✊';
+                            if (!rightHandFistState) {
+                                cycleNextModel();
+                                rightHandFistState = true;
+                            }
+                        } else {
+                            statusStr += '[R] ORBITAL SCAN 🖐';
+                            rightHandFistState = false;
+                            
+                            // 倾斜角度映射为旋转速度 (类似真实方向盘/摇杆)
+                            let dx = middleMcp.x - wrist.x;
+                            let dy = middleMcp.y - wrist.y;
+                            let rollAngle = Math.atan2(dy, dx);
+                            let tiltX = rollAngle + (Math.PI / 2);
+                            
+                            // 前后倾斜 (Z轴深度差)
+                            let tiltY = middleMcp.z - wrist.z;
+
+                            // 1-Euro Filter: 先滤波再设死区
+                            // 滤波后噪声已极小，死区可适当收窄
+                            const now = performance.now() / 1000;
+                            const smoothTiltX = filterTiltX.filter(tiltX, now);
+                            const smoothTiltY = filterTiltY.filter(tiltY, now);
+
+                            // 死区: 防止完全静止时的残余漂移
+                            let finalTiltX = smoothTiltX;
+                            if (Math.abs(finalTiltX) < 0.08) finalTiltX = 0;
+                            else finalTiltX -= Math.sign(finalTiltX) * 0.08;
+
+                            let finalTiltY = smoothTiltY;
+                            if (Math.abs(finalTiltY) < 0.015) finalTiltY = 0;
+                            else finalTiltY -= Math.sign(finalTiltY) * 0.015;
+
+                            // 转换为持续旋转的速度 (角速度)
+                            targetVelocityY = finalTiltX * 5.0;
+                            targetVelocityX = finalTiltY * 60.0;
+                        }
+                        
+                        canvasCtx.strokeStyle = 'rgba(0, 255, 204, 0.8)';
+                        canvasCtx.shadowColor = '#00ffcc';
+                    }
+                    
+                    // 绘制骨骼线
+                    canvasCtx.lineWidth = 2;
+                    canvasCtx.shadowBlur = 8;
+                    connections.forEach(conn => {
+                        const p1 = landmarks[conn[0]];
+                        const p2 = landmarks[conn[1]];
+                        canvasCtx.beginPath();
+                        canvasCtx.moveTo((1 - p1.x) * w, p1.y * h);
+                        canvasCtx.lineTo((1 - p2.x) * w, p2.y * h);
+                        canvasCtx.stroke();
+                    });
+                    
+                    // 绘制关节
+                    canvasCtx.fillStyle = '#fff';
+                    canvasCtx.shadowBlur = 5;
+                    landmarks.forEach(lm => {
+                        canvasCtx.beginPath();
+                        canvasCtx.arc((1 - lm.x) * w, lm.y * h, 2.5, 0, 2 * Math.PI);
+                        canvasCtx.fill();
+                    });
+                    canvasCtx.shadowBlur = 0;
+                }
+            }
+            
+            if (!leftHandFound) {
+                // 手消失时重置滤波器，下次出现时以新状态重新初始化
+                filterOpenness.reset();
+                targetProgress = 0.0;
+            }
+            if (!rightHandFound) {
+                filterTiltX.reset();
+                filterTiltY.reset();
+                filterRightOpen.reset();
+                targetVelocityX = 0.0;
+                targetVelocityY = 0.0;
+                rightHandFistState = false;
+            }
+            
+            if (!leftHandFound && !rightHandFound) {
+                statusText.innerText = 'AWAITING HANDS...';
+                statusText.style.color = 'rgba(255,255,255,0.5)';
+            } else {
+                statusText.innerText = statusStr;
+                statusText.style.color = '#fff';
+            }
+        });
+        
+        const cameraUtils = new window.Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({ image: videoElement });
+            },
+            width: 320,
+            height: 240
+        });
+        cameraUtils.start();
+        
+        drawSensorGrid(); // 初始化时画一次网格
+        
+        // --- 6. Animation Loop ---
+        const clock = new THREE.Clock();
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            const elapsed = clock.getElapsedTime();
+            
+            if (particleSystem) {
+                material.uniforms.uProgress.value += (targetProgress - material.uniforms.uProgress.value) * delta * 4.0;
+                material.uniforms.uTime.value = elapsed;
+                // 平滑速度插值，让旋转启动和停止带有惯性
+                currentVelocityX += (targetVelocityX - currentVelocityX) * delta * 8.0;
+                currentVelocityY += (targetVelocityY - currentVelocityY) * delta * 8.0;
+
+                // 累加角度，实现根据倾斜度产生的持续无缝 360 度旋转
+                particleSystem.rotation.x += currentVelocityX * delta;
+                particleSystem.rotation.y += currentVelocityY * delta;
+            }
+            
+            // 运镜微调: 摄像机伴随鼠标产生空间漂移感
+            camera.position.x += (mouseX * 4.0 - camera.position.x) * delta * 2.0;
+            camera.position.y += ((mouseY * -4.0 + 1.5) - camera.position.y) * delta * 2.0;
+            camera.lookAt(scene.position);
+            
+            controls.update();
+            
+            // 使用后期处理 Composer 渲染，取代原本的 renderer.render
+            composer.render();
+        }
+        
+        animate();
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
