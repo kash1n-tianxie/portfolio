@@ -24,7 +24,7 @@ An interactive 3D particle visualization system controlled by hand gestures via 
 
 ## 🚀 Live Demo
 
-👉 [Open on GitHub Pages](https://YOUR_USERNAME.github.io/YOUR_REPO_NAME/)
+<img src="assets/demo.gif" width="85%" alt="livedemo">
 
 ## 🛠 Tech Stack
 
